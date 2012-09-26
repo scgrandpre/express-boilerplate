@@ -26,29 +26,43 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
+ *
+ * History:
+ *
+ * - 22 March 2011: History section created on top of sds.c
+ * - 22 March 2011: Fixed a problem with "\xab" escapes convertion in
+ *                  function sdssplitargs().
  */
+
+#define SDS_ABORT_ON_OOM
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <assert.h>
 #include "sds.h"
 #include "zmalloc.h"
+
+static void sdsOomAbort(void) {
+    fprintf(stderr,"SDS: Out Of Memory (SDS_ABORT_ON_OOM defined)\n");
+    abort();
+}
 
 sds sdsnewlen(const void *init, size_t initlen) {
     struct sdshdr *sh;
 
-    if (init) {
-        sh = zmalloc(sizeof(struct sdshdr)+initlen+1);
-    } else {
-        sh = zcalloc(sizeof(struct sdshdr)+initlen+1);
-    }
+    sh = zmalloc(sizeof(struct sdshdr)+initlen+1);
+#ifdef SDS_ABORT_ON_OOM
+    if (sh == NULL) sdsOomAbort();
+#else
     if (sh == NULL) return NULL;
+#endif
     sh->len = initlen;
     sh->free = 0;
-    if (initlen && init)
-        memcpy(sh->buf, init, initlen);
+    if (initlen) {
+        if (init) memcpy(sh->buf, init, initlen);
+        else memset(sh->buf,0,initlen);
+    }
     sh->buf[initlen] = '\0';
     return (char*)sh->buf;
 }
@@ -85,13 +99,7 @@ void sdsclear(sds s) {
     sh->buf[0] = '\0';
 }
 
-/* Enlarge the free space at the end of the sds string so that the caller
- * is sure that after calling this function can overwrite up to addlen
- * bytes after the end of the string, plus one more byte for nul term.
- * 
- * Note: this does not change the *size* of the sds string as returned
- * by sdslen(), but only the free buffer space we have. */
-sds sdsMakeRoomFor(sds s, size_t addlen) {
+static sds sdsMakeRoomFor(sds s, size_t addlen) {
     struct sdshdr *sh, *newsh;
     size_t free = sdsavail(s);
     size_t len, newlen;
@@ -105,59 +113,14 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
     else
         newlen += SDS_MAX_PREALLOC;
     newsh = zrealloc(sh, sizeof(struct sdshdr)+newlen+1);
+#ifdef SDS_ABORT_ON_OOM
+    if (newsh == NULL) sdsOomAbort();
+#else
     if (newsh == NULL) return NULL;
+#endif
 
     newsh->free = newlen - len;
     return newsh->buf;
-}
-
-/* Reallocate the sds string so that it has no free space at the end. The
- * contained string remains not altered, but next concatenation operations
- * will require a reallocation. */
-sds sdsRemoveFreeSpace(sds s) {
-    struct sdshdr *sh;
-
-    sh = (void*) (s-(sizeof(struct sdshdr)));
-    sh = zrealloc(sh, sizeof(struct sdshdr)+sh->len+1);
-    sh->free = 0;
-    return sh->buf;
-}
-
-size_t sdsAllocSize(sds s) {
-    struct sdshdr *sh = (void*) (s-(sizeof(struct sdshdr)));
-
-    return sizeof(*sh)+sh->len+sh->free+1;
-}
-
-/* Increment the sds length and decrements the left free space at the
- * end of the string accordingly to 'incr'. Also set the null term
- * in the new end of the string.
- *
- * This function is used in order to fix the string length after the
- * user calls sdsMakeRoomFor(), writes something after the end of
- * the current string, and finally needs to set the new length.
- *
- * Note: it is possible to use a negative increment in order to
- * right-trim the string.
- *
- * Using sdsIncrLen() and sdsMakeRoomFor() it is possible to mount the
- * following schema to cat bytes coming from the kerenl to the end of an
- * sds string new things without copying into an intermediate buffer:
- *
- * oldlen = sdslen(s);
- * s = sdsMakeRoomFor(s, BUFFER_SIZE);
- * nread = read(fd, s+oldlen, BUFFER_SIZE);
- * ... check for nread <= 0 and handle it ...
- * sdsIncrLen(s, nhread);
- */
-void sdsIncrLen(sds s, int incr) {
-    struct sdshdr *sh = (void*) (s-(sizeof(struct sdshdr)));
-
-    assert(sh->free >= incr);
-    sh->len += incr;
-    sh->free -= incr;
-    assert(sh->free >= 0);
-    s[sh->len] = '\0';
 }
 
 /* Grow the sds to have the specified length. Bytes that were not part of
@@ -229,7 +192,11 @@ sds sdscatvprintf(sds s, const char *fmt, va_list ap) {
 
     while(1) {
         buf = zmalloc(buflen);
+#ifdef SDS_ABORT_ON_OOM
+        if (buf == NULL) sdsOomAbort();
+#else
         if (buf == NULL) return NULL;
+#endif
         buf[buflen-2] = '\0';
         va_copy(cpy,ap);
         vsnprintf(buf, buflen, fmt, cpy);
@@ -349,7 +316,11 @@ sds *sdssplitlen(char *s, int len, char *sep, int seplen, int *count) {
     if (seplen < 1 || len < 0) return NULL;
 
     tokens = zmalloc(sizeof(sds)*slots);
+#ifdef SDS_ABORT_ON_OOM
+    if (tokens == NULL) sdsOomAbort();
+#else
     if (tokens == NULL) return NULL;
+#endif
 
     if (len == 0) {
         *count = 0;
@@ -362,13 +333,25 @@ sds *sdssplitlen(char *s, int len, char *sep, int seplen, int *count) {
 
             slots *= 2;
             newtokens = zrealloc(tokens,sizeof(sds)*slots);
-            if (newtokens == NULL) goto cleanup;
+            if (newtokens == NULL) {
+#ifdef SDS_ABORT_ON_OOM
+                sdsOomAbort();
+#else
+                goto cleanup;
+#endif
+            }
             tokens = newtokens;
         }
         /* search the separator */
         if ((seplen == 1 && *(s+j) == sep[0]) || (memcmp(s+j,sep,seplen) == 0)) {
             tokens[elements] = sdsnewlen(s+start,j-start);
-            if (tokens[elements] == NULL) goto cleanup;
+            if (tokens[elements] == NULL) {
+#ifdef SDS_ABORT_ON_OOM
+                sdsOomAbort();
+#else
+                goto cleanup;
+#endif
+            }
             elements++;
             start = j+seplen;
             j = j+seplen-1; /* skip the separator */
@@ -376,19 +359,26 @@ sds *sdssplitlen(char *s, int len, char *sep, int seplen, int *count) {
     }
     /* Add the final element. We are sure there is room in the tokens array. */
     tokens[elements] = sdsnewlen(s+start,len-start);
-    if (tokens[elements] == NULL) goto cleanup;
+    if (tokens[elements] == NULL) {
+#ifdef SDS_ABORT_ON_OOM
+                sdsOomAbort();
+#else
+                goto cleanup;
+#endif
+    }
     elements++;
     *count = elements;
     return tokens;
 
+#ifndef SDS_ABORT_ON_OOM
 cleanup:
     {
         int i;
         for (i = 0; i < elements; i++) sdsfree(tokens[i]);
         zfree(tokens);
-        *count = 0;
         return NULL;
     }
+#endif
 }
 
 void sdsfreesplitres(sds *tokens, int count) {
@@ -588,43 +578,12 @@ err:
     return NULL;
 }
 
-void sdssplitargs_free(sds *argv, int argc) {
-    int j;
-
-    for (j = 0 ;j < argc; j++) sdsfree(argv[j]);
-    zfree(argv);
-}
-
-/* Modify the string substituting all the occurrences of the set of
- * characters specifed in the 'from' string to the corresponding character
- * in the 'to' array.
- *
- * For instance: sdsmapchars(mystring, "ho", "01", 2)
- * will have the effect of turning the string "hello" into "0ell1".
- *
- * The function returns the sds string pointer, that is always the same
- * as the input pointer since no resize is needed. */
-sds sdsmapchars(sds s, char *from, char *to, size_t setlen) {
-    size_t j, i, l = sdslen(s);
-
-    for (j = 0; j < l; j++) {
-        for (i = 0; i < setlen; i++) {
-            if (s[j] == from[i]) {
-                s[j] = to[i];
-                break;
-            }
-        }
-    }
-    return s;
-}
-
 #ifdef SDS_TEST_MAIN
 #include <stdio.h>
 #include "testhelp.h"
 
 int main(void) {
     {
-        struct sdshdr *sh;
         sds x = sdsnew("foo"), y;
 
         test_cond("Create a string and obtain the length",
@@ -704,26 +663,7 @@ int main(void) {
         x = sdsnew("aar");
         y = sdsnew("bar");
         test_cond("sdscmp(bar,bar)", sdscmp(x,y) < 0)
-
-        {
-            int oldfree;
-
-            sdsfree(x);
-            x = sdsnew("0");
-            sh = (void*) (x-(sizeof(struct sdshdr)));
-            test_cond("sdsnew() free/len buffers", sh->len == 1 && sh->free == 0);
-            x = sdsMakeRoomFor(x,1);
-            sh = (void*) (x-(sizeof(struct sdshdr)));
-            test_cond("sdsMakeRoomFor()", sh->len == 1 && sh->free > 0);
-            oldfree = sh->free;
-            x[1] = '1';
-            sdsIncrLen(x,1);
-            test_cond("sdsIncrLen() -- content", x[0] == '0' && x[1] == '1');
-            test_cond("sdsIncrLen() -- len", sh->len == 2);
-            test_cond("sdsIncrLen() -- free", sh->free == oldfree-1);
-        }
     }
     test_report()
-    return 0;
 }
 #endif

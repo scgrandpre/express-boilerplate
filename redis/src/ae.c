@@ -44,54 +44,40 @@
 
 /* Include the best multiplexing layer supported by this system.
  * The following should be ordered by performances, descending. */
-#ifdef HAVE_EVPORT
-#include "ae_evport.c"
+#ifdef HAVE_EPOLL
+#include "ae_epoll.c"
 #else
-    #ifdef HAVE_EPOLL
-    #include "ae_epoll.c"
+    #ifdef HAVE_KQUEUE
+    #include "ae_kqueue.c"
     #else
-        #ifdef HAVE_KQUEUE
-        #include "ae_kqueue.c"
-        #else
-        #include "ae_select.c"
-        #endif
+    #include "ae_select.c"
     #endif
 #endif
 
-aeEventLoop *aeCreateEventLoop(int setsize) {
+aeEventLoop *aeCreateEventLoop(void) {
     aeEventLoop *eventLoop;
     int i;
 
-    if ((eventLoop = zmalloc(sizeof(*eventLoop))) == NULL) goto err;
-    eventLoop->events = zmalloc(sizeof(aeFileEvent)*setsize);
-    eventLoop->fired = zmalloc(sizeof(aeFiredEvent)*setsize);
-    if (eventLoop->events == NULL || eventLoop->fired == NULL) goto err;
-    eventLoop->setsize = setsize;
+    eventLoop = zmalloc(sizeof(*eventLoop));
+    if (!eventLoop) return NULL;
     eventLoop->timeEventHead = NULL;
     eventLoop->timeEventNextId = 0;
     eventLoop->stop = 0;
     eventLoop->maxfd = -1;
     eventLoop->beforesleep = NULL;
-    if (aeApiCreate(eventLoop) == -1) goto err;
+    if (aeApiCreate(eventLoop) == -1) {
+        zfree(eventLoop);
+        return NULL;
+    }
     /* Events with mask == AE_NONE are not set. So let's initialize the
      * vector with it. */
-    for (i = 0; i < setsize; i++)
+    for (i = 0; i < AE_SETSIZE; i++)
         eventLoop->events[i].mask = AE_NONE;
     return eventLoop;
-
-err:
-    if (eventLoop) {
-        zfree(eventLoop->events);
-        zfree(eventLoop->fired);
-        zfree(eventLoop);
-    }
-    return NULL;
 }
 
 void aeDeleteEventLoop(aeEventLoop *eventLoop) {
     aeApiFree(eventLoop);
-    zfree(eventLoop->events);
-    zfree(eventLoop->fired);
     zfree(eventLoop);
 }
 
@@ -102,7 +88,7 @@ void aeStop(aeEventLoop *eventLoop) {
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData)
 {
-    if (fd >= eventLoop->setsize) return AE_ERR;
+    if (fd >= AE_SETSIZE) return AE_ERR;
     aeFileEvent *fe = &eventLoop->events[fd];
 
     if (aeApiAddEvent(eventLoop, fd, mask) == -1)
@@ -118,7 +104,7 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
 
 void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
 {
-    if (fd >= eventLoop->setsize) return;
+    if (fd >= AE_SETSIZE) return;
     aeFileEvent *fe = &eventLoop->events[fd];
 
     if (fe->mask == AE_NONE) return;
@@ -135,7 +121,7 @@ void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
 }
 
 int aeGetFileEvents(aeEventLoop *eventLoop, int fd) {
-    if (fd >= eventLoop->setsize) return 0;
+    if (fd >= AE_SETSIZE) return 0;
     aeFileEvent *fe = &eventLoop->events[fd];
 
     return fe->mask;

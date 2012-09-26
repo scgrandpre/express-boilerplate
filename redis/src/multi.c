@@ -40,13 +40,6 @@ void queueMultiCommand(redisClient *c) {
     c->mstate.count++;
 }
 
-void discardTransaction(redisClient *c) {
-    freeClientMultiState(c);
-    initClientMultiState(c);
-    c->flags &= ~(REDIS_MULTI|REDIS_DIRTY_CAS);;
-    unwatchAllKeys(c);
-}
-
 void multiCommand(redisClient *c) {
     if (c->flags & REDIS_MULTI) {
         addReplyError(c,"MULTI calls can not be nested");
@@ -61,7 +54,11 @@ void discardCommand(redisClient *c) {
         addReplyError(c,"DISCARD without MULTI");
         return;
     }
-    discardTransaction(c);
+
+    freeClientMultiState(c);
+    initClientMultiState(c);
+    c->flags &= ~(REDIS_MULTI|REDIS_DIRTY_CAS);;
+    unwatchAllKeys(c);
     addReply(c,shared.ok);
 }
 
@@ -70,7 +67,7 @@ void discardCommand(redisClient *c) {
 void execCommandReplicateMulti(redisClient *c) {
     robj *multistring = createStringObject("MULTI",5);
 
-    if (server.aof_state != REDIS_AOF_OFF)
+    if (server.appendonly)
         feedAppendOnlyFile(server.multiCommand,c->db->id,&multistring,1);
     if (listLength(server.slaves))
         replicationFeedSlaves(server.slaves,c->db->id,&multistring,1);
@@ -115,7 +112,7 @@ void execCommand(redisClient *c) {
         c->argc = c->mstate.commands[j].argc;
         c->argv = c->mstate.commands[j].argv;
         c->cmd = c->mstate.commands[j].cmd;
-        call(c,REDIS_CALL_FULL);
+        call(c);
 
         /* Commands may alter argc/argv, restore mstate. */
         c->mstate.commands[j].argc = c->argc;
@@ -197,7 +194,7 @@ void unwatchAllKeys(redisClient *c) {
          * from the list */
         wk = listNodeValue(ln);
         clients = dictFetchValue(wk->db->watched_keys, wk->key);
-        redisAssertWithInfo(c,NULL,clients != NULL);
+        redisAssert(clients != NULL);
         listDelNode(clients,listSearchKey(clients,c));
         /* Kill the entry at all if this was the only client */
         if (listLength(clients) == 0)

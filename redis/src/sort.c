@@ -1,6 +1,5 @@
 #include "redis.h"
 #include "pqsort.h" /* Partial qsort for SORT+LIMIT */
-#include <math.h> /* isnan() */
 
 redisSortOperation *createSortOperation(int type, robj *pattern) {
     redisSortOperation *so = zmalloc(sizeof(*so));
@@ -113,10 +112,7 @@ int sortCompare(const void *s1, const void *s2) {
         } else if (so1->u.score < so2->u.score) {
             cmp = -1;
         } else {
-            /* Objects have the same score, but we don't want the comparison
-             * to be undefined, so we compare objects lexicographycally.
-             * This way the result of SORT is deterministic. */
-            cmp = compareStringObjects(so1->obj,so2->obj);
+            cmp = 0;
         }
     } else {
         /* Alphanumeric sorting */
@@ -147,10 +143,9 @@ void sortCommand(redisClient *c) {
     list *operations;
     unsigned int outputlen = 0;
     int desc = 0, alpha = 0;
-    long limit_start = 0, limit_count = -1, start, end;
+    int limit_start = 0, limit_count = -1, start, end;
     int j, dontsort = 0, vectorlen;
     int getop = 0; /* GET operation counter */
-    int int_convertion_error = 0;
     robj *sortval, *sortby = NULL, *storekey = NULL;
     redisSortObject *vector; /* Resulting vector to sort */
 
@@ -187,8 +182,8 @@ void sortCommand(redisClient *c) {
         } else if (!strcasecmp(c->argv[j]->ptr,"alpha")) {
             alpha = 1;
         } else if (!strcasecmp(c->argv[j]->ptr,"limit") && leftargs >= 2) {
-            if ((getLongFromObjectOrReply(c, c->argv[j+1], &limit_start, NULL) != REDIS_OK) ||
-                (getLongFromObjectOrReply(c, c->argv[j+2], &limit_count, NULL) != REDIS_OK)) return;
+            limit_start = atoi(c->argv[j+1]->ptr);
+            limit_count = atoi(c->argv[j+2]->ptr);
             j+=2;
         } else if (!strcasecmp(c->argv[j]->ptr,"store") && leftargs >= 1) {
             storekey = c->argv[j+1];
@@ -211,15 +206,6 @@ void sortCommand(redisClient *c) {
             return;
         }
         j++;
-    }
-
-    /* If we have STORE we need to force sorting for deterministic output
-     * and replication. We use alpha sorting since this is guaranteed to
-     * work with any input. */
-    if (storekey && dontsort) {
-        dontsort = 0;
-        alpha = 1;
-        sortby = NULL;
     }
 
     /* Destructively convert encoded sorted sets for SORT. */
@@ -262,7 +248,7 @@ void sortCommand(redisClient *c) {
         dictEntry *setele;
         di = dictGetIterator(set);
         while((setele = dictNext(di)) != NULL) {
-            vector[j].obj = dictGetKey(setele);
+            vector[j].obj = dictGetEntryKey(setele);
             vector[j].u.score = 0;
             vector[j].u.cmpobj = NULL;
             j++;
@@ -271,7 +257,7 @@ void sortCommand(redisClient *c) {
     } else {
         redisPanic("Unknown type");
     }
-    redisAssertWithInfo(c,sortval,j == vectorlen);
+    redisAssert(j == vectorlen);
 
     /* Now it's time to load the right scores in the sorting vector */
     if (dontsort == 0) {
@@ -290,21 +276,14 @@ void sortCommand(redisClient *c) {
                 if (sortby) vector[j].u.cmpobj = getDecodedObject(byval);
             } else {
                 if (byval->encoding == REDIS_ENCODING_RAW) {
-                    char *eptr;
-
-                    vector[j].u.score = strtod(byval->ptr,&eptr);
-                    if (eptr[0] != '\0' || errno == ERANGE ||
-                        isnan(vector[j].u.score))
-                    {
-                        int_convertion_error = 1;
-                    }
+                    vector[j].u.score = strtod(byval->ptr,NULL);
                 } else if (byval->encoding == REDIS_ENCODING_INT) {
                     /* Don't need to decode the object if it's
                      * integer-encoded (the only encoding supported) so
                      * far. We can just cast it */
                     vector[j].u.score = (long)byval->ptr;
                 } else {
-                    redisAssertWithInfo(c,sortval,1 != 1);
+                    redisAssert(1 != 1);
                 }
             }
 
@@ -326,7 +305,6 @@ void sortCommand(redisClient *c) {
     }
     if (end >= vectorlen) end = vectorlen-1;
 
-    server.sort_dontsort = dontsort;
     if (dontsort == 0) {
         server.sort_desc = desc;
         server.sort_alpha = alpha;
@@ -340,9 +318,7 @@ void sortCommand(redisClient *c) {
     /* Send command output to the output buffer, performing the specified
      * GET/DEL/INCR/DECR operations if any. */
     outputlen = getop ? getop*(end-start+1) : end-start+1;
-    if (int_convertion_error) {
-        addReplyError(c,"One or more scores can't be converted into double");
-    } else if (storekey == NULL) {
+    if (storekey == NULL) {
         /* STORE option not specified, sent the sorting result to client */
         addReplyMultiBulkLen(c,outputlen);
         for (j = start; j <= end; j++) {
@@ -364,8 +340,7 @@ void sortCommand(redisClient *c) {
                         decrRefCount(val);
                     }
                 } else {
-                    /* Always fails */
-                    redisAssertWithInfo(c,sortval,sop->type == REDIS_SORT_GET);
+                    redisAssert(sop->type == REDIS_SORT_GET); /* always fails */
                 }
             }
         }
@@ -395,20 +370,15 @@ void sortCommand(redisClient *c) {
                         listTypePush(sobj,val,REDIS_TAIL);
                         decrRefCount(val);
                     } else {
-                        /* Always fails */
-                        redisAssertWithInfo(c,sortval,sop->type == REDIS_SORT_GET);
+                        /* always fails */
+                        redisAssert(sop->type == REDIS_SORT_GET);
                     }
                 }
             }
         }
-        if (outputlen) {
-            setKey(c->db,storekey,sobj);
-            server.dirty += outputlen;
-        } else if (dbDelete(c->db,storekey)) {
-            signalModifiedKey(c->db,storekey);
-            server.dirty++;
-        }
+        if (outputlen) setKey(c->db,storekey,sobj);
         decrRefCount(sobj);
+        server.dirty += outputlen;
         addReplyLongLong(c,outputlen);
     }
 

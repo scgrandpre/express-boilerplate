@@ -50,7 +50,7 @@ typedef struct list {
     void *(*dup)(void *ptr);
     void (*free)(void *ptr);
     int (*match)(void *ptr, void *key);
-    unsigned long len;
+    unsigned int len;
 } list;
 
 /* Functions implemented as macros */
@@ -81,10 +81,9 @@ listNode *listNext(listIter *iter);
 void listReleaseIterator(listIter *iter);
 list *listDup(list *orig);
 listNode *listSearchKey(list *list, void *key);
-listNode *listIndex(list *list, long index);
+listNode *listIndex(list *list, int index);
 void listRewind(list *list, listIter *li);
 void listRewindTail(list *list, listIter *li);
-void listRotate(list *list);
 
 /* Directions for iterators */
 #define AL_START_HEAD 0

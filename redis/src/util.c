@@ -5,9 +5,9 @@
 #include <ctype.h>
 #include <limits.h>
 #include <math.h>
-#include <unistd.h>
 #include <sys/time.h>
 #include <float.h>
+#include <unistd.h>
 
 #include "util.h"
 
@@ -212,8 +212,8 @@ int ll2string(char *s, size_t len, long long value) {
 /* Convert a string into a long long. Returns 1 if the string could be parsed
  * into a (non-overflowing) long long, 0 otherwise. The value will be set to
  * the parsed value when appropriate. */
-int string2ll(const char *s, size_t slen, long long *value) {
-    const char *p = s;
+int string2ll(char *s, size_t slen, long long *value) {
+    char *p = s;
     size_t plen = 0;
     int negative = 0;
     unsigned long long v;
@@ -278,7 +278,7 @@ int string2ll(const char *s, size_t slen, long long *value) {
 /* Convert a string into a long. Returns 1 if the string could be parsed into a
  * (non-overflowing) long, 0 otherwise. The value will be set to the parsed
  * value when appropriate. */
-int string2l(const char *s, size_t slen, long *lval) {
+int string2l(char *s, size_t slen, long *lval) {
     long long llval;
 
     if (!string2ll(s,slen,&llval))
@@ -374,6 +374,22 @@ void getRandomHexChars(char *p, unsigned int len) {
     for (j = 0; j < len; j++)
         p[j] = charset[p[j] & 0x0F];
     fclose(fp);
+}
+
+/* Return the UNIX time in microseconds */
+long long ustime(void) {
+    struct timeval tv;
+    long long ust;
+
+    gettimeofday(&tv, NULL);
+    ust = ((long long)tv.tv_sec)*1000000;
+    ust += tv.tv_usec;
+    return ust;
+}
+
+/* Return the UNIX time in milliseconds */
+long long mstime(void) {
+    return ustime()/1000;
 }
 
 #ifdef UTIL_TEST_MAIN

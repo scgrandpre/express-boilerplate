@@ -4,7 +4,7 @@ module.exports = function(app) {
   var get, set, _ref;
   app.get('/', function(req, res) {
     return res.render('index', {
-      action: 'Do Something!'
+      action: 'hit'
     });
   });
   app.get('/action/:action', function(req, res) {

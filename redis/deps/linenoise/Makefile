@@ -1,21 +1,10 @@
-STD=
-WARN= -Wall
-OPT= -Os
-
-R_CFLAGS= $(STD) $(WARN) $(OPT) $(DEBUG) $(CFLAGS)
-R_LDFLAGS= $(LDFLAGS)
-DEBUG= -g
-
-R_CC=$(CC) $(R_CFLAGS)
-R_LD=$(CC) $(R_LDFLAGS)
-
-linenoise.o: linenoise.h linenoise.c
+linenoise_example: linenoise.h linenoise.c
 
 linenoise_example: linenoise.o example.o
-	$(R_LD) -o $@ $^
+	$(CC) $(ARCH) -Wall -W -Os -g -o linenoise_example linenoise.o example.o
 
 .c.o:
-	$(R_CC) -c $<
+	$(CC) $(ARCH) -c -Wall -W -Os -g $<
 
 clean:
 	rm -f linenoise_example *.o

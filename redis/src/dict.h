@@ -33,8 +33,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdint.h>
-
 #ifndef __DICT_H
 #define __DICT_H
 
@@ -46,11 +44,7 @@
 
 typedef struct dictEntry {
     void *key;
-    union {
-        void *val;
-        uint64_t u64;
-        int64_t s64;
-    } v;
+    void *val;
     struct dictEntry *next;
 } dictEntry;
 
@@ -94,44 +88,37 @@ typedef struct dictIterator {
 #define DICT_HT_INITIAL_SIZE     4
 
 /* ------------------------------- Macros ------------------------------------*/
-#define dictFreeVal(d, entry) \
+#define dictFreeEntryVal(d, entry) \
     if ((d)->type->valDestructor) \
-        (d)->type->valDestructor((d)->privdata, (entry)->v.val)
+        (d)->type->valDestructor((d)->privdata, (entry)->val)
 
-#define dictSetVal(d, entry, _val_) do { \
+#define dictSetHashVal(d, entry, _val_) do { \
     if ((d)->type->valDup) \
-        entry->v.val = (d)->type->valDup((d)->privdata, _val_); \
+        entry->val = (d)->type->valDup((d)->privdata, _val_); \
     else \
-        entry->v.val = (_val_); \
+        entry->val = (_val_); \
 } while(0)
 
-#define dictSetSignedIntegerVal(entry, _val_) \
-    do { entry->v.s64 = _val_; } while(0)
-
-#define dictSetUnsignedIntegerVal(entry, _val_) \
-    do { entry->v.u64 = _val_; } while(0)
-
-#define dictFreeKey(d, entry) \
+#define dictFreeEntryKey(d, entry) \
     if ((d)->type->keyDestructor) \
         (d)->type->keyDestructor((d)->privdata, (entry)->key)
 
-#define dictSetKey(d, entry, _key_) do { \
+#define dictSetHashKey(d, entry, _key_) do { \
     if ((d)->type->keyDup) \
         entry->key = (d)->type->keyDup((d)->privdata, _key_); \
     else \
         entry->key = (_key_); \
 } while(0)
 
-#define dictCompareKeys(d, key1, key2) \
+#define dictCompareHashKeys(d, key1, key2) \
     (((d)->type->keyCompare) ? \
         (d)->type->keyCompare((d)->privdata, key1, key2) : \
         (key1) == (key2))
 
 #define dictHashKey(d, key) (d)->type->hashFunction(key)
-#define dictGetKey(he) ((he)->key)
-#define dictGetVal(he) ((he)->v.val)
-#define dictGetSignedIntegerVal(he) ((he)->v.s64)
-#define dictGetUnsignedIntegerVal(he) ((he)->v.u64)
+
+#define dictGetEntryKey(he) ((he)->key)
+#define dictGetEntryVal(he) ((he)->val)
 #define dictSlots(d) ((d)->ht[0].size+(d)->ht[1].size)
 #define dictSize(d) ((d)->ht[0].used+(d)->ht[1].used)
 #define dictIsRehashing(ht) ((ht)->rehashidx != -1)
@@ -140,9 +127,7 @@ typedef struct dictIterator {
 dict *dictCreate(dictType *type, void *privDataPtr);
 int dictExpand(dict *d, unsigned long size);
 int dictAdd(dict *d, void *key, void *val);
-dictEntry *dictAddRaw(dict *d, void *key);
 int dictReplace(dict *d, void *key, void *val);
-dictEntry *dictReplaceRaw(dict *d, void *key);
 int dictDelete(dict *d, const void *key);
 int dictDeleteNoFree(dict *d, const void *key);
 void dictRelease(dict *d);
@@ -162,8 +147,6 @@ void dictEnableResize(void);
 void dictDisableResize(void);
 int dictRehash(dict *d, int n);
 int dictRehashMilliseconds(dict *d, int ms);
-void dictSetHashFunctionSeed(unsigned int initval);
-unsigned int dictGetHashFunctionSeed(void);
 
 /* Hash table types */
 extern dictType dictTypeHeapStringCopyKey;

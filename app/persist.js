@@ -3,7 +3,7 @@ var get, redis, redis_db, redis_password, redis_url, set, url, _ref, _ref1;
 
 url = require('url');
 
-redis_url = url.parse((_ref = process.env.REDISTOGO_URL) != null ? _ref : 'redis://localhost:6300');
+redis_url = url.parse((_ref = process.env.REDISTOGO_URL) != null ? _ref : 'redis://localhost:6379');
 
 redis = (require('redis')).createClient(redis_url.port, redis_url.hostname);
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+#! /bin/sh
 
 # Copyright 2011 Dvir Volk <dvirsk at gmail dot com>. All rights reserved.
 #
