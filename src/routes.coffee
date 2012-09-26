@@ -1,7 +1,16 @@
 module.exports = (app) ->
 
     app.get '/' , (req, res) ->
-        res.render 'index', {action: 'hit'}
+         res.render 'index', 
+ buttons: [
+	{label: 'pass'', good_count: 0, bad_count: 0}
+	{label: 'set', good_count: 0, bad_count: 0}
+	{label: 'hits'', good_count: 0, bad_count: 0}
+	{label: 'block'', good_count: 0, bad_count: 0}
+	{label: 'defense'', good_count: 0, bad_count: 0}
+	{label: 'serve'', good_count: 0, bad_count: 0}
+
+ ]
 
     app.get '/action/:action' , (req, res) ->
         res.render 'index', {action: req.params.action}

@@ -1,42 +1,50 @@
 extends layout
 block content
-	.container.page-wrap
-		.row
-			.span10.offset2.page-title
-				h1
-					| Scott Stats:
-		.row
-			.span10.offset2
-			- var items = ["pass good", "pass bad"]
-			each item in items
-				button.the-button=item
-		one ----------				
-		.row
-			.span10.offset2
-			- var items = ["set good", "set bad"]
-			each item in items
-				button.the-button=item
-		one ----------				
-		.row
-			.span10.offset2
-			- var items = ["hit good", "hit bad"]
-			each item in items
-				button.the-button=item
-		one ----------				
-		.row
-			.span10.offset2
-			- var items = ["block good", "block bad"]
-			each item in items
-				button.the-button=item
-		one ----------				
-		.row
-			.span10.offset2
-			- var items = ["defense good", "defense bad"]
-			each item in items
-				button.the-button=item
-		one ----------				
-		.row
-			.span10.offset2
-			- var items = ["serve good", "serve bad"]
-			each item in items
-				button.the-button=item
+    .container.page-wrap
+        .row
+            .span10.offset2.page-title
+                h1
+                    | Scott Stats:
+        each button in buttons
+            .row
+                .span10.offset2
+                    button.good-button=button.good_count
+                    button.bad-button=button.bad_count
+
+        .row
+
+            
+            .span10.offset2
+            - var items = ["pass good", "pass bad"]
+            each item in items
+                button.the-button=item
+        div ----------                
+        .row
+            .span10.offset2
+            - var items = ["set good", "set bad"]
+            each item in items
+                button.the-button=item
+        div ----------                
+        .row
+            .span10.offset2
+            - var items = ["hit good", "hit bad"]
+            each item in items
+                button.the-button=item
+        div ----------                
+        .row
+            .span10.offset2
+            - var items = ["block good", "block bad"]
+            each item in items
+                button.the-button=item
+        div ----------                
+        .row
+            .span10.offset2
+            - var items = ["defense good", "defense bad"]
+            each item in items
+                button.the-button=item
+        div ----------                
+        .row
+            .span10.offset2
+            - var items = ["serve good", "serve bad"]
+            each item in items
+                button.the-button=item

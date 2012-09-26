@@ -1,7 +1,7 @@
 module.exports = (app) ->
 
     app.get '/' , (req, res) ->
-        res.render 'index', {action: 'Do Something!'}
+        res.render 'index', {action: 'hit'}
 
     app.get '/action/:action' , (req, res) ->
         res.render 'index', {action: req.params.action}
